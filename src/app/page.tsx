@@ -1,113 +1,180 @@
-import Image from "next/image";
+'use client'
 
-export default function Home() {
+import { Button } from '@/components/ui/button'
+import {
+  ResizableHandle,
+  ResizablePanel,
+  ResizablePanelGroup
+} from '@/components/ui/resizable'
+import { Editor } from '@monaco-editor/react'
+import { Play } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { cloneDeep } from 'lodash'
+import { cn } from '@/lib/utils'
+
+type codeObject = { id: string; value: string }
+
+export default function Home () {
+  const [code, setCode] = useState<codeObject[]>([
+    { id: 'html', value: '' },
+    { id: 'css', value: '' },
+    { id: 'javascript', value: '' }
+  ])
+  const [selectedType, setSelectedType] = useState('html')
+  const [logs, setLogs] = useState<string[]>([])
+  const [srcDoc, setSrcDoc] = useState('')
+  const iframeRef = useRef<HTMLIFrameElement | null>(null)
+  const consoleRef = useRef<HTMLDivElement | null>(null)
+
+  const run = useCallback((code: codeObject[]) => {
+    const js = code.find(c => c.id === 'javascript')
+    const css = code.find(c => c.id === 'css')
+    const html = code.find(c => c.id === 'html')
+    const srcCode = `<html lang="en">
+          <head>
+            <meta charset="UTF-8" />
+            <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+            <title>Document</title>
+            <style>${css?.value}</style>
+          </head>
+          <body>
+            ${html?.value}
+            <script>
+              console.originalLog = console.log
+              console.originalError = console.error
+              console.log = (...args) => {
+                args = args.map(arg => JSON.stringify(arg))
+                window.parent.postMessage({ type: 'console', data: args }, '*')
+              }
+              console.error = (...args) => {
+                window.parent.postMessage({ type: 'console_error', data: args }, '*')
+              } 
+              try { ${js?.value} } catch (e) { console.log('error');console.error(e) }
+            </script>
+          </body>
+        </html>`
+
+    setSrcDoc(srcCode)
+  }, [])
+
+  useEffect(() => {
+    function setToConsole (value: string[]) {
+      value = value.map(v => `${v}`)
+      setLogs(initial_logs => [...initial_logs, ...value])
+    }
+    function getConsoleValue (e: MessageEvent) {
+      switch (e.data.type) {
+        case 'console':
+          setToConsole(e.data.data)
+          break
+
+        case 'console_error':
+          setToConsole(e.data.data)
+          break
+        default:
+          break
+      }
+    }
+    window.addEventListener('message', getConsoleValue)
+
+    return () => {
+      window.removeEventListener('message', getConsoleValue)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (consoleRef.current) {
+      consoleRef.current.scrollTop = consoleRef.current.scrollHeight
+    }
+  }, [logs])
+
+  const selectedCode = useMemo(() => {
+    return code.find(c => c.id === selectedType)
+  }, [selectedType, code])
+
   return (
-    <main className="flex min-h-screen flex-col items-center justify-between p-24">
-      <div className="z-10 max-w-5xl w-full items-center justify-between font-mono text-sm lg:flex">
-        <p className="fixed left-0 top-0 flex w-full justify-center border-b border-gray-300 bg-gradient-to-b from-zinc-200 pb-6 pt-8 backdrop-blur-2xl dark:border-neutral-800 dark:bg-zinc-800/30 dark:from-inherit lg:static lg:w-auto  lg:rounded-xl lg:border lg:bg-gray-200 lg:p-4 lg:dark:bg-zinc-800/30">
-          Get started by editing&nbsp;
-          <code className="font-mono font-bold">src/app/page.tsx</code>
-        </p>
-        <div className="fixed bottom-0 left-0 flex h-48 w-full items-end justify-center bg-gradient-to-t from-white via-white dark:from-black dark:via-black lg:static lg:h-auto lg:w-auto lg:bg-none">
-          <a
-            className="pointer-events-none flex place-items-center gap-2 p-8 lg:pointer-events-auto lg:p-0"
-            href="https://vercel.com?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+    <div>
+      <div className='h-[60px] flex items-center justify-center'>
+        <Button onClick={() => run(code)}>
+          <Play />
+          Run
+        </Button>
+      </div>
+      <ResizablePanelGroup
+        direction='horizontal'
+        className='grid grid-cols-2 h-[calc(100%-60px)]'
+      >
+        <ResizablePanel defaultSize={20} maxSize={60} minSize={10}>
+          <div className={cn(`h-full w-full flex flex-col pl-2 truncate`)}>
+            {code.map(c => (
+              <div
+                key={c.id}
+                className={cn(
+                  'cursor-pointer hover:bg-slate-200',
+                  selectedType === c.id && 'bg-slate-200'
+                )}
+                onClick={() => setSelectedType(c.id)}
+              >
+                {c.id}
+              </div>
+            ))}
+          </div>
+        </ResizablePanel>
+        <ResizableHandle />
+        <ResizablePanel defaultSize={100}>
+          <Editor
+            value={selectedCode?.value}
+            onChange={e =>
+              setCode(c => {
+                c = cloneDeep(c)
+                const selected_code = c.find(c => c.id === selectedType)
+                //@ts-ignore
+                selected_code.value = e || ''
+                return c
+              })
+            }
+            theme='vs-dark'
+            language={selectedType}
+            height={window.innerHeight - 60}
+          />
+        </ResizablePanel>
+        <ResizableHandle />
+        <ResizablePanel defaultSize={50}>
+          <ResizablePanelGroup
+            direction='vertical'
+            className='grid grid-rows-2'
           >
-            By{" "}
-            <Image
-              src="/vercel.svg"
-              alt="Vercel Logo"
-              className="dark:invert"
-              width={100}
-              height={24}
-              priority
-            />
-          </a>
-        </div>
-      </div>
-
-      <div className="relative flex place-items-center before:absolute before:h-[300px] before:w-full sm:before:w-[480px] before:-translate-x-1/2 before:rounded-full before:bg-gradient-radial before:from-white before:to-transparent before:blur-2xl before:content-[''] after:absolute after:-z-20 after:h-[180px] after:w-full sm:after:w-[240px] after:translate-x-1/3 after:bg-gradient-conic after:from-sky-200 after:via-blue-200 after:blur-2xl after:content-[''] before:dark:bg-gradient-to-br before:dark:from-transparent before:dark:to-blue-700 before:dark:opacity-10 after:dark:from-sky-900 after:dark:via-[#0141ff] after:dark:opacity-40 before:lg:h-[360px] z-[-1]">
-        <Image
-          className="relative dark:drop-shadow-[0_0_0.3rem_#ffffff70] dark:invert"
-          src="/next.svg"
-          alt="Next.js Logo"
-          width={180}
-          height={37}
-          priority
-        />
-      </div>
-
-      <div className="mb-32 grid text-center lg:max-w-5xl lg:w-full lg:mb-0 lg:grid-cols-4 lg:text-left">
-        <a
-          href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className={`mb-3 text-2xl font-semibold`}>
-            Docs{" "}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className={`m-0 max-w-[30ch] text-sm opacity-50`}>
-            Find in-depth information about Next.js features and API.
-          </p>
-        </a>
-
-        <a
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className={`mb-3 text-2xl font-semibold`}>
-            Learn{" "}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className={`m-0 max-w-[30ch] text-sm opacity-50`}>
-            Learn about Next.js in an interactive course with&nbsp;quizzes!
-          </p>
-        </a>
-
-        <a
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className={`mb-3 text-2xl font-semibold`}>
-            Templates{" "}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className={`m-0 max-w-[30ch] text-sm opacity-50`}>
-            Explore starter templates for Next.js.
-          </p>
-        </a>
-
-        <a
-          href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-          className="group rounded-lg border border-transparent px-5 py-4 transition-colors hover:border-gray-300 hover:bg-gray-100 hover:dark:border-neutral-700 hover:dark:bg-neutral-800/30"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <h2 className={`mb-3 text-2xl font-semibold`}>
-            Deploy{" "}
-            <span className="inline-block transition-transform group-hover:translate-x-1 motion-reduce:transform-none">
-              -&gt;
-            </span>
-          </h2>
-          <p className={`m-0 max-w-[30ch] text-sm opacity-50 text-balance`}>
-            Instantly deploy your Next.js site to a shareable URL with Vercel.
-          </p>
-        </a>
-      </div>
-    </main>
-  );
+            <ResizablePanel>
+              <iframe
+                ref={iframeRef}
+                srcDoc={srcDoc}
+                // sandbox='allow-scripts'
+                width='100%'
+                height='100%'
+              />
+            </ResizablePanel>
+            <ResizableHandle />
+            <ResizablePanel>
+              <div
+                className='h-full overflow-y-auto py-1 bg-stone-800'
+                ref={consoleRef}
+              >
+                {logs.map((l, i) => (
+                  <div
+                    key={i}
+                    className='font-semibold text-sm text-white p-[2px] '
+                  >
+                    <p className=' border-stone-600 border-b mx-3'>
+                      <p className='rounded hover:bg-stone-900 p-1'>{l}</p>
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </ResizablePanel>
+            <ResizableHandle />
+          </ResizablePanelGroup>
+        </ResizablePanel>
+      </ResizablePanelGroup>
+    </div>
+  )
 }
